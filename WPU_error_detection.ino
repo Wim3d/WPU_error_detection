@@ -57,10 +57,10 @@ IFTTTMaker ifttt(IFTTT_KEY, Sclient);
 #define WIFI_CONNECT_TIMEOUT_S 10
 
 // define mail headers
-#define HEADER_ERROR "Warmtepomp RP119 heeft een storing"
-#define HEADER_REMINDER "herinnering: Warmtepomp RP119 heeft nog steeds een storing"
+#define HEADER_ERROR "Heatpump has an error"
+#define HEADER_REMINDER "Reminder: Heatpump still has an error"
 #define HEADER_LOW_BAT "ESP-07S_WPU_malfunction_detector low battery"
-#define HEADER_BAT "batterijmeting ESP-07S_WPU_malfunction_detector"
+#define HEADER_BAT "battery measurement ESP-07S_WPU_malfunction_detector"
 
 // define mail types
 #define MAIL_ERROR 1
@@ -74,10 +74,10 @@ IFTTTMaker ifttt(IFTTT_KEY, Sclient);
 #define ERROR_MODE 3
 
 // define mail adresses
-#define MAIL_FROM "whoogervorst@casema.nl"
-#define MAIL_TO_1 "whoogervorst@casema.nl"
-#define MAIL_TO_2 "wjhoogervorst@gmail.com"
-#define MAIL_TO_3 "heejoho@gmail.com"
+#define MAIL_FROM "youremail@here.nl"
+#define MAIL_TO_1 "youremail@here.nl"
+#define MAIL_TO_2 "youremail@here.nl"
+#define MAIL_TO_3 "youremail@here.nl"
 
 // RTC-MEM Adresses
 #define RTC_CHECK 65
@@ -249,7 +249,7 @@ void setup()
 
         }
         // check voltage level
-        if ( (ESP.getVcc() / (float)1023 * (float)0.98)  < VOLT_THRES)
+        if ( (ESP.getVcc() / (float)1024 < VOLT_THRES)
         {
           sendEmail(MAIL_LOW_BAT);
         }
@@ -311,9 +311,9 @@ void sendEmail (int mail_type)
   if (!eRcv()) return;
   client.println("auth login");
   if (!eRcv()) return ;
-  client.println(SMTP2goUSER); //<---------User in base64
+  client.println(SMTP2goUSER); //<---------User in base64 from credentials file
   if (!eRcv()) return ;
-  client.println(SMTP2goPW);//<---------Password in base64
+  client.println(SMTP2goPW);//<---------Password in base64 from credentials file
   if (!eRcv()) return ;
   // change to your email address (sender)
   client.print(F("MAIL From: "));
@@ -351,29 +351,29 @@ void sendEmail (int mail_type)
   if (mail_type == MAIL_REMINDER)
     client.println(F(HEADER_REMINDER));
 
-  client.print(F("Mail van module: "));
+  client.print(F("Mail from module: "));
   client.print(MODULE);
   client.print(F(", ChipID = "));
   int32 ChipID = ESP.getChipId();
   client.println(ChipID);
   client.println(F(""));
-  client.print(F("Batterij spanning is: "));
-  client.print((ESP.getVcc() / (float)1023 * (float)0.98), 1);
+  client.print(F("Batterij voltage is: "));
+  client.print((ESP.getVcc() / (float)1024, 1);
   client.println(F(" V"));
   client.println(F(""));
-  client.print(F("WiFi vermogen (RSSI): "));
+  client.print(F("WiFi power (RSSI): "));
   client.println(WiFi.RSSI());
-  client.print(F("Verzonden via SSID: "));
+  client.print(F("Sent by SSID: "));
   client.println(WiFi.SSID());
 
 
   if (mail_type == MAIL_REMINDER)
   {
-    client.print(F("Storing duurt al ongeveer "));
+    client.print(F("Error last about "));
     system_rtc_mem_read(RTC_COUNT, countbuf, 1); // read counter from RTC-MEMORY
     int temp_count = countbuf[0];
     client.print(temp_count);
-    client.println(F(" uur"));
+    client.println(F(" hour"));
   }
   client.println(F(""));  //do not remove this last line
   client.println(F("."));  //do not remove this last important "." since it tells end of the mailbody
