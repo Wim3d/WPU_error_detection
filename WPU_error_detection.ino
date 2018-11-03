@@ -7,14 +7,13 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <IFTTTMaker.h>
+#include <PubSubClient.h>
 #include <WiFiClientSecure.h>
-
-#include <credentials.h>  //WiFi, IFTTT, SMTP2Go
+#include <credentials.h> //WiFi/IFTTT_KEY/MQTT
 
 extern "C" {
 #include "user_interface.h"
 }
-
 ADC_MODE(ADC_VCC); //vcc read-mode
 
 /*credentials & definitions */
@@ -28,11 +27,18 @@ ADC_MODE(ADC_VCC); //vcc read-mode
 char server[] = "mail.smtpcorp.com";
 int port = 2525;
 
+//MQTT
+const char* mqtt_willTopic = "sensor/WPU/state";
+const char* mqtt_id = "WPU-Client";
+
+WiFiClient espClient;
+PubSubClient MQTTclient(espClient);
+
 WiFiClient client;
 WiFiClientSecure Sclient;
-IFTTTMaker ifttt(KEY, Sclient);
+IFTTTMaker ifttt(IFTTT_KEY, Sclient);
 
-#define MODULE "module name"   //name of module here
+#define MODULE "ESP-07S_WPU_sensor_detector"   //name of module here
 
 #define MINUTE 60e6  // 60e6 is 60 seconds = 1 minute
 #define HOUR MINUTE*60 // number of millis in an hour
@@ -51,10 +57,10 @@ IFTTTMaker ifttt(KEY, Sclient);
 #define WIFI_CONNECT_TIMEOUT_S 10
 
 // define mail headers
-#define HEADER_ERROR "Heatpump has an error"
-#define HEADER_REMINDER "Reminder: Heatpump still has an error"
+#define HEADER_ERROR "Warmtepomp RP119 heeft een storing"
+#define HEADER_REMINDER "herinnering: Warmtepomp RP119 heeft nog steeds een storing"
 #define HEADER_LOW_BAT "ESP-07S_WPU_malfunction_detector low battery"
-#define HEADER_BAT "battery measurement ESP-07S_WPU_malfunction_detector"
+#define HEADER_BAT "batterijmeting ESP-07S_WPU_malfunction_detector"
 
 // define mail types
 #define MAIL_ERROR 1
@@ -68,10 +74,10 @@ IFTTTMaker ifttt(KEY, Sclient);
 #define ERROR_MODE 3
 
 // define mail adresses
-#define MAIL_FROM "youremail@here.nl"
-#define MAIL_TO_1 "youremail@here.nl"
-#define MAIL_TO_2 "youremail@here.nl"
-#define MAIL_TO_3 "youremail@here.nl"
+#define MAIL_FROM "whoogervorst@casema.nl"
+#define MAIL_TO_1 "whoogervorst@casema.nl"
+#define MAIL_TO_2 "wjhoogervorst@gmail.com"
+#define MAIL_TO_3 "heejoho@gmail.com"
 
 // RTC-MEM Adresses
 #define RTC_CHECK 65
@@ -177,7 +183,10 @@ void setup()
   Serial.print("IP address: ");
   IPAddress ip = WiFi.localIP();
   Serial.println(ip);
-
+  MQTTclient.setServer(mqtt_server, 1883);
+  if (!MQTTclient.connected()) {
+    reconnect();
+  }
   // switch in setup
   switch (program_mode)
   {
@@ -190,26 +199,26 @@ void setup()
       }
     case OTAFLASH_MODE:
       {
-        // start of OTA routine in setup
         ArduinoOTA.begin();
-        Serial.print("OTA Ready on IP address: ");
-        Serial.println(WiFi.localIP());
+        MQTTclient.publish("sensor/WPU/state", "OTA mode");
         // end OTA routine
         break;
       }
     case BAT_MODE:
       {
+        MQTTclient.publish("sensor/WPU/state", "Status OK");
         sendEmail(MAIL_BAT);
         digitalWrite(GREENLED, LOW);
         break;
       }
     case ERROR_MODE:
       {
-        //check whether the e-mails must be send in this program run
+        MQTTclient.publish("sensor/WPU/state", "WPU ERROR");
+        //check whether the signals must be send in this program run
         system_rtc_mem_read(RTC_COUNT, countbuf, 1);     // read counter from RTC mem
         if (countbuf[0] % DELAY == 0)
         {
-          Serial.println("WPU malfunction, send  mail every # hours");
+          Serial.println("WPU malfunction, send  mail no stock every # hours");
           if (countbuf[0]  == 0)                         //  send mail first time
           {
             sendEmail(MAIL_ERROR);
@@ -240,7 +249,7 @@ void setup()
 
         }
         // check voltage level
-        if ( (ESP.getVcc() / (float)1023 )  < VOLT_THRES)
+        if ( (ESP.getVcc() / (float)1023 * (float)0.98)  < VOLT_THRES)
         {
           sendEmail(MAIL_LOW_BAT);
         }
@@ -265,6 +274,7 @@ void setup()
 
 void loop()
 {
+
   // switch in loop
   switch (program_mode)
   {
@@ -301,9 +311,9 @@ void sendEmail (int mail_type)
   if (!eRcv()) return;
   client.println("auth login");
   if (!eRcv()) return ;
-  client.println(SMTP2goUSER); //<---------User in base64 from credentials file
+  client.println(SMTP2goUSER); //<---------User in base64
   if (!eRcv()) return ;
-  client.println(SMTP2goPW);//<---------Password in base64 from credentials file
+  client.println(SMTP2goPW);//<---------Password in base64
   if (!eRcv()) return ;
   // change to your email address (sender)
   client.print(F("MAIL From: "));
@@ -341,29 +351,29 @@ void sendEmail (int mail_type)
   if (mail_type == MAIL_REMINDER)
     client.println(F(HEADER_REMINDER));
 
-  client.print(F("Mail from module: "));
+  client.print(F("Mail van module: "));
   client.print(MODULE);
   client.print(F(", ChipID = "));
   int32 ChipID = ESP.getChipId();
   client.println(ChipID);
   client.println(F(""));
-  client.print(F("Battery voltage is: "));
+  client.print(F("Batterij spanning is: "));
   client.print((ESP.getVcc() / (float)1023 * (float)0.98), 1);
   client.println(F(" V"));
   client.println(F(""));
-  client.print(F("WiFi power (RSSI): "));
+  client.print(F("WiFi vermogen (RSSI): "));
   client.println(WiFi.RSSI());
-  client.print(F("Sent via SSID: "));
+  client.print(F("Verzonden via SSID: "));
   client.println(WiFi.SSID());
-  
+
 
   if (mail_type == MAIL_REMINDER)
   {
-    client.print(F("Error last about "));
+    client.print(F("Storing duurt al ongeveer "));
     system_rtc_mem_read(RTC_COUNT, countbuf, 1); // read counter from RTC-MEMORY
     int temp_count = countbuf[0];
     client.print(temp_count);
-    client.println(F(" hour"));
+    client.println(F(" uur"));
   }
   client.println(F(""));  //do not remove this last line
   client.println(F("."));  //do not remove this last important "." since it tells end of the mailbody
@@ -406,4 +416,15 @@ byte eRcv()
     return false;
   }
   return true;
+}
+
+boolean reconnect()
+{
+  //Serial.println("Attempting MQTT connection...");
+  if (MQTTclient.connect(mqtt_id, mqtt_willTopic, 0, 0, "Status OK")) {    // connect(const char *id, const char* willTopic, uint8_t willQos, boolean willRetain, const char* willMessage)
+    //Serial.println("connected");
+    // ... and resubscribe
+  }
+  //Serial.println(MQTTclient.connected());
+  return MQTTclient.connected();
 }
